@@ -21,31 +21,45 @@ public class CatMover : MonoBehaviour
     private Dictionary<Direction, float> directionLengths = new Dictionary<Direction, float>();
 
     private bool canMove = false;
+    private bool catEscaped = false;
     private Vector3 moveDirection = Vector3.zero;
+    private Vector3 gridStartPos = Vector3.zero;
+    private Vector3 gridEndPos = Vector3.zero;
+    private Vector3 lastMovedDir = Vector3.zero;
 
     public void UpdateCatPosition()
     {
         ResetData();
 
         var catPos = transform.position;
-        var gridStartPos = GridManager.Instance.StartPos;
-        var gridEndPos = GridManager.Instance.EndPos;
+        gridStartPos = GridManager.Instance.StartPos;
+        gridEndPos = GridManager.Instance.EndPos;
 
         trackPos = catPos;
         while (true)
         {
             CheckAvailableDirections(catPos, gridStartPos, gridEndPos);
-            if (directions.Contains(Direction.left) && directions.Contains(Direction.right)
-                && directions.Contains(Direction.up) && directions.Contains(Direction.down))
+            if (HasReachedEdge())
+            {
+                catEscaped = true;
+                break;
+            }
+            else if ((directions.Contains(Direction.left) && directions.Contains(Direction.right)
+                && directions.Contains(Direction.up) && directions.Contains(Direction.down)))
             {
                 break;
             }
         }
 
+        if (catEscaped)
+        {
+            moveDirection += lastMovedDir * 5f;
+            return;
+        }
+
         float minDirLength = 999;
         minDirLength = FindMinDirectionalLength(minDirLength);
         moveDirection = catPos;
-        var nodes = GridManager.Instance.Nodes;
 
         if (minDirLength != 0)
         {
@@ -74,9 +88,17 @@ public class CatMover : MonoBehaviour
         }
     }
 
+    private bool HasReachedEdge()
+    {
+        return trackPos.y >= gridEndPos.y ||
+               trackPos.y <= gridStartPos.y ||
+               trackPos.x <= gridStartPos.x ||
+               trackPos.x >= gridEndPos.x;
+    }
+
     private void MoveCatPosition(Direction dir)
     {
-        InitMoveDirection(dir);
+        UpdateMoveDirection(dir);
         canMove = true;
     }
 
@@ -100,20 +122,24 @@ public class CatMover : MonoBehaviour
 
     private bool AnyUnblockedDirection() => directionLengths.Any(direction => !blockedDirections[direction.Key]);
 
-    private void InitMoveDirection(Direction dirKey)
+    private void UpdateMoveDirection(Direction dirKey)
     {
         switch (dirKey)
         {
             case Direction.left:
+                lastMovedDir = Vector3.left;
                 moveDirection += Vector3.left;
                 break;
             case Direction.right:
+                lastMovedDir = Vector3.right;
                 moveDirection += Vector3.right;
                 break;
             case Direction.up:
+                lastMovedDir = Vector3.up;
                 moveDirection += Vector3.up;
                 break;
             case Direction.down:
+                lastMovedDir = Vector3.down;
                 moveDirection += Vector3.down;
                 break;
         }
@@ -181,7 +207,8 @@ public class CatMover : MonoBehaviour
         trackPos = new Vector3(Mathf.Round(trackPos.x), MathF.Round(trackPos.y));
         var nodePoint = GridManager.Instance.Nodes.Find(nodePoint => nodePoint.Coordinates.x == trackPos.x &&
                                                                      nodePoint.Coordinates.y == trackPos.y);
-        blockedDirections[direction] = nodePoint.IsBlocked;
+        if (nodePoint != null)
+            blockedDirections[direction] = nodePoint.IsBlocked;
     }
 
     private void Start()
@@ -192,14 +219,20 @@ public class CatMover : MonoBehaviour
 
     private void Update()
     {
-        if (canMove)
+        if (canMove && IsReachedDest())
         {
-            transform.position = Vector3.Lerp(transform.position, moveDirection, Time.deltaTime * 10f);
-            if (Vector3.Distance(transform.position, moveDirection) <= 0)
-            {
-                canMove = false;
-            }
+            canMove = false;
         }
+        else if (catEscaped && IsReachedDest())
+        {
+            catEscaped = false;
+        }
+    }
+
+    private bool IsReachedDest()
+    {
+        transform.position = Vector3.Lerp(transform.position, moveDirection, Time.deltaTime * 10f);
+        return Vector3.Distance(transform.position, moveDirection) <= 0;
     }
 
     private void ResetData()
