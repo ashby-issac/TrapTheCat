@@ -25,6 +25,11 @@ public class NodePoint : MonoBehaviour
 
     private void OnMouseDown()
     {
+        var catPos = GridManager.Instance.Cat.position;
+        catPos = new Vector3(Mathf.Round(catPos.x), Mathf.Round(catPos.y));
+
+        if (transform.position == catPos)
+            return;
         // Change the color of the sprite renderer;
         if (nodeSprite == null)
             nodeSprite = GetComponent<SpriteRenderer>();

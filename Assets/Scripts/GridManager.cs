@@ -7,12 +7,14 @@ public class GridManager : MonoBehaviour
     [SerializeField] private NodePoint nodePoint;
     [SerializeField] private Vector3 startPos;
     [SerializeField] private int rows, cols;
+    [SerializeField] private Transform cat;
 
     private List<NodePoint> nodes = new List<NodePoint>();
     public List<NodePoint> Nodes => nodes;
 
     public static GridManager Instance;
 
+    public Transform Cat => cat;
     public Vector3 StartPos => startPos;
     public Vector3 EndPos => nodes[nodes.Count - 1].Coordinates;
 

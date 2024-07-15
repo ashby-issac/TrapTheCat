@@ -12,12 +12,19 @@ enum Direction
     down,
 }
 
+enum NodeState
+{
+    None,
+    Blocked,
+    UnBlocked
+}
+
 public class CatMover : MonoBehaviour
 {
     private Vector3 trackPos = Vector3.zero;
     private List<Direction> directions = new List<Direction>();
 
-    private Dictionary<Direction, bool> blockedDirections = new Dictionary<Direction, bool>();
+    private Dictionary<Direction, NodeState> blockedDirections = new Dictionary<Direction, NodeState>();
     private Dictionary<Direction, float> directionLengths = new Dictionary<Direction, float>();
 
     private bool canMove = false;
@@ -39,35 +46,24 @@ public class CatMover : MonoBehaviour
         while (true)
         {
             CheckAvailableDirections(catPos, gridStartPos, gridEndPos);
-            if (HasReachedEdge())
-            {
-                catEscaped = true;
-                break;
-            }
-            else if ((directions.Contains(Direction.left) && directions.Contains(Direction.right)
-                && directions.Contains(Direction.up) && directions.Contains(Direction.down)))
+            if ((directions.Contains(Direction.left) && directions.Contains(Direction.right) &&
+                 directions.Contains(Direction.up) && directions.Contains(Direction.down)))
             {
                 break;
             }
-        }
-
-        if (catEscaped)
-        {
-            moveDirection += lastMovedDir * 5f;
-            return;
         }
 
         float minDirLength = 999;
         minDirLength = FindMinDirectionalLength(minDirLength);
         moveDirection = catPos;
 
-        if (minDirLength != 0)
+        if (minDirLength > 0)
         {
-            if (AnyUnblockedDirection())
+            if (AnyDirectWayOut())
             {
                 foreach (var dir in directionLengths)
                 {
-                    if (!blockedDirections[dir.Key] && dir.Value == minDirLength)
+                    if (blockedDirections[dir.Key] == NodeState.UnBlocked && dir.Value == minDirLength)
                     {
                         MoveCatPosition(dir.Key);
                         break;
@@ -86,14 +82,32 @@ public class CatMover : MonoBehaviour
                 }
             }
         }
+        else // if negative it means there's a way out for the cat
+        {
+            var dirKey = directionLengths.FirstOrDefault(dirLength => dirLength.Value == -1).Key;
+            MoveCatPosition(dir: dirKey);
+        }
     }
 
-    private bool HasReachedEdge()
+    private bool HasReachedEdge(Direction currentDir)
     {
-        return trackPos.y >= gridEndPos.y ||
-               trackPos.y <= gridStartPos.y ||
-               trackPos.x <= gridStartPos.x ||
-               trackPos.x >= gridEndPos.x;
+        bool hasReachedEdge = false;
+        switch (currentDir)
+        {
+            case Direction.up:
+                hasReachedEdge = transform.position.y >= gridEndPos.y;
+                break;
+            case Direction.down:
+                hasReachedEdge = transform.position.y <= gridStartPos.y;
+                break;
+            case Direction.left:
+                hasReachedEdge = transform.position.x <= gridStartPos.x;
+                break;
+            case Direction.right:
+                hasReachedEdge = transform.position.x >= gridEndPos.x;
+                break;
+        }
+        return hasReachedEdge;
     }
 
     private void MoveCatPosition(Direction dir)
@@ -104,11 +118,15 @@ public class CatMover : MonoBehaviour
 
     private float FindMinDirectionalLength(float minDirLength)
     {
-        if (AnyUnblockedDirection())
+        if (AnyDirectWayOut())
         {
             foreach (var dirLength in directionLengths)
-                if (!blockedDirections[dirLength.Key] && dirLength.Value < minDirLength)
+            {
+                if ((blockedDirections[dirLength.Key] == NodeState.UnBlocked || blockedDirections[dirLength.Key] == NodeState.None) && dirLength.Value < minDirLength)
+                {
                     minDirLength = dirLength.Value;
+                }
+            }
         }
         else
         {
@@ -120,26 +138,23 @@ public class CatMover : MonoBehaviour
         return minDirLength;
     }
 
-    private bool AnyUnblockedDirection() => directionLengths.Any(direction => !blockedDirections[direction.Key]);
+    private bool AnyDirectWayOut() => directionLengths.Any(direction => blockedDirections[direction.Key] == NodeState.UnBlocked ||
+                                                                          blockedDirections[direction.Key] == NodeState.None);
 
     private void UpdateMoveDirection(Direction dirKey)
     {
         switch (dirKey)
         {
             case Direction.left:
-                lastMovedDir = Vector3.left;
                 moveDirection += Vector3.left;
                 break;
             case Direction.right:
-                lastMovedDir = Vector3.right;
                 moveDirection += Vector3.right;
                 break;
             case Direction.up:
-                lastMovedDir = Vector3.up;
                 moveDirection += Vector3.up;
                 break;
             case Direction.down:
-                lastMovedDir = Vector3.down;
                 moveDirection += Vector3.down;
                 break;
         }
@@ -147,34 +162,39 @@ public class CatMover : MonoBehaviour
 
     private void CheckAvailableDirections(Vector3 catPos, Vector3 gridStartPos, Vector3 gridEndPos)
     {
-        if (trackPos.y < gridEndPos.y && !blockedDirections[Direction.up] && !directions.Contains(Direction.up))
+        trackPos = new Vector3(Mathf.Round(trackPos.x), Mathf.Round(trackPos.y));
+        if (trackPos.y <= gridEndPos.y
+            && blockedDirections[Direction.up] == NodeState.UnBlocked && !directions.Contains(Direction.up))
         {
-            CheckIfPathIsBlocked(offsetDir: Vector3.up, Direction.up);
-            if (blockedDirections[Direction.up] || trackPos.y >= gridEndPos.y)
+            CheckIfNextNodeIsBlocked(currentOffsetDir: Vector3.up, Direction.up);
+            if (blockedDirections[Direction.up] == NodeState.Blocked || trackPos.y > gridEndPos.y)
             {
                 SetPathData(offsetDir: Vector3.up, trackPos.y, catPos.y, catPos, exploredDir: Direction.up);
             }
         }
-        else if (trackPos.y > gridStartPos.y && !blockedDirections[Direction.down] && !directions.Contains(Direction.down))
+        else if (trackPos.y >= gridStartPos.y
+                 && blockedDirections[Direction.down] == NodeState.UnBlocked && !directions.Contains(Direction.down))
         {
-            CheckIfPathIsBlocked(offsetDir: Vector3.down, Direction.down);
-            if (blockedDirections[Direction.down] || trackPos.y <= gridStartPos.y)
+            CheckIfNextNodeIsBlocked(currentOffsetDir: Vector3.down, Direction.down);
+            if (blockedDirections[Direction.down] == NodeState.Blocked || trackPos.y < gridStartPos.y)
             {
                 SetPathData(offsetDir: Vector3.down, trackPos.y, catPos.y, catPos, exploredDir: Direction.down);
             }
         }
-        else if (trackPos.x > gridStartPos.x && !blockedDirections[Direction.left] && !directions.Contains(Direction.left))
+        else if (trackPos.x >= gridStartPos.x
+                 && blockedDirections[Direction.left] == NodeState.UnBlocked && !directions.Contains(Direction.left))
         {
-            CheckIfPathIsBlocked(offsetDir: Vector3.left, Direction.left);
-            if (blockedDirections[Direction.left] || trackPos.x <= gridStartPos.x)
+            CheckIfNextNodeIsBlocked(currentOffsetDir: Vector3.left, Direction.left);
+            if (blockedDirections[Direction.left] == NodeState.Blocked || trackPos.x < gridStartPos.x)
             {
                 SetPathData(offsetDir: Vector3.left, trackPos.x, catPos.x, catPos, exploredDir: Direction.left);
             }
         }
-        else if (trackPos.x < gridEndPos.x && !blockedDirections[Direction.right] && !directions.Contains(Direction.right))
+        else if (trackPos.x <= gridEndPos.x &&
+                 blockedDirections[Direction.right] == NodeState.UnBlocked && !directions.Contains(Direction.right))
         {
-            CheckIfPathIsBlocked(offsetDir: Vector3.right, Direction.right);
-            if (blockedDirections[Direction.right] || trackPos.x >= gridEndPos.x)
+            CheckIfNextNodeIsBlocked(currentOffsetDir: Vector3.right, Direction.right);
+            if (blockedDirections[Direction.right] == NodeState.Blocked || trackPos.x > gridEndPos.x)
             {
                 SetPathData(offsetDir: Vector3.right, trackPos.x, catPos.x, catPos, exploredDir: Direction.right);
             }
@@ -185,30 +205,46 @@ public class CatMover : MonoBehaviour
                                                    Vector3 catPos, Direction exploredDir)
     {
         // negate the offsetDir axis value and add it to the trackAxisVal 
-        if (blockedDirections[exploredDir])
-        {
-            var negatedOffsetVal = -(offsetDir.x == 0 ? offsetDir.y : offsetDir.x);
-            trackAxisVal += negatedOffsetVal;
-            directionLengths[exploredDir] = Mathf.Abs(Mathf.Round(trackAxisVal - catAxisVal));
-        }
-        else
-        {
-            directionLengths[exploredDir] = Mathf.Abs(Mathf.Round(trackAxisVal - catAxisVal));
-        }
+        InitDirectionLength(blockedDirections[exploredDir], offsetDir, trackAxisVal, catAxisVal, exploredDir);
 
         // Resetting trackPos for checking in other directions
         trackPos = catPos;
         directions.Add(exploredDir); // avoid looping for same direction
     }
 
-    private void CheckIfPathIsBlocked(Vector3 offsetDir, Direction direction)
+    private void InitDirectionLength(NodeState nodeState, Vector3 offsetDir,
+                                     float trackAxisVal, float catAxisVal, Direction exploredDir)
     {
-        trackPos += offsetDir;
+        switch (nodeState)
+        {
+            case NodeState.None:
+                directionLengths[exploredDir] = -1;
+                break;
+            case NodeState.UnBlocked:
+                directionLengths[exploredDir] = Mathf.Abs(Mathf.Round(trackAxisVal - catAxisVal));
+                break;
+            case NodeState.Blocked:
+                var negatedOffsetVal = -(offsetDir.x == 0 ? offsetDir.y : offsetDir.x);
+                trackAxisVal += negatedOffsetVal;
+                directionLengths[exploredDir] = Mathf.Abs(Mathf.Round(trackAxisVal - catAxisVal));
+                break;
+        }
+    }
+
+    private void CheckIfNextNodeIsBlocked(Vector3 currentOffsetDir, Direction currentDir)
+    {
+        trackPos += currentOffsetDir;
         trackPos = new Vector3(Mathf.Round(trackPos.x), MathF.Round(trackPos.y));
         var nodePoint = GridManager.Instance.Nodes.Find(nodePoint => nodePoint.Coordinates.x == trackPos.x &&
                                                                      nodePoint.Coordinates.y == trackPos.y);
-        if (nodePoint != null)
-            blockedDirections[direction] = nodePoint.IsBlocked;
+        if (nodePoint)
+        {
+            blockedDirections[currentDir] = nodePoint.IsBlocked ? NodeState.Blocked : NodeState.UnBlocked;
+        }
+        else if (nodePoint == null)
+        {
+            blockedDirections[currentDir] = HasReachedEdge(currentDir) ? NodeState.None : NodeState.UnBlocked;
+        }
     }
 
     private void Start()
@@ -246,10 +282,10 @@ public class CatMover : MonoBehaviour
     private void InitDirectionProps()
     {
         blockedDirections.Clear();
-        blockedDirections.Add(Direction.left, false);
-        blockedDirections.Add(Direction.right, false);
-        blockedDirections.Add(Direction.up, false);
-        blockedDirections.Add(Direction.down, false);
+        blockedDirections.Add(Direction.left, NodeState.UnBlocked);
+        blockedDirections.Add(Direction.right, NodeState.UnBlocked);
+        blockedDirections.Add(Direction.up, NodeState.UnBlocked);
+        blockedDirections.Add(Direction.down, NodeState.UnBlocked);
 
         directionLengths.Clear();
         directionLengths.Add(Direction.left, 0f);
